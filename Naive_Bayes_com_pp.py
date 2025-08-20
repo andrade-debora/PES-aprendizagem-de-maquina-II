@@ -20,6 +20,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 from mlxtend.plotting import plot_decision_regions
+from sklearn.pipeline import Pipeline
 
 # Classes do modelo de aprendizado
 from sklearn.naive_bayes import GaussianNB
@@ -36,7 +37,27 @@ from sklearn.metrics import (classification_report,
 
 from sklearn.model_selection import train_test_split, KFold, cross_val_score
 
+# Funções de pre processamento
+from sklearn.feature_selection import VarianceThreshold  # Selecao de atributos
 
+# Função para pre-processamento: selecao de prototipos
+from imblearn.under_sampling import EditedNearestNeighbours
+
+# Função para pre-processamento: balanceamento 
+from imblearn.over_sampling import SMOTE
+from imblearn.under_sampling import RandomUnderSampler, CondensedNearestNeighbour
+
+# Função para pre-processamento: redução de dimensionalidade
+from sklearn.decomposition import PCA
+
+# Função para pre-processamento: Escalonamento
+from sklearn.preprocessing import StandardScaler
+
+# Função de busca por melhores parametros
+from sklearn.model_selection import GridSearchCV
+
+import warnings
+warnings.filterwarnings('ignore')
 
 #%% Inicio do programa ==========================================================================================
 # Lê o dataset como dataframe
@@ -87,30 +108,166 @@ y = dataset[target_column]
 # Define a semente
 seed=42
 
-# Divide o dataset em treino e teste
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=seed)
+#%% Pré-processamento | Seleção de atributos ===========================
 
-#%% Faz o treinamento do modelo de Naive Bayes
-NB_model = GaussianNB()
-NB_model.fit(X_train, y_train)
+filter_variance = VarianceThreshold(0.01)
+X_filtered = filter_variance.fit_transform(X)
 
-y_pred = NB_model.predict(X_test)
+# Atributos removidos
+print("Número inicial de features: %d" %(X.shape[1]))
+print("Features selecionadas: %d" %(X_filtered.shape[1]))
+
+X_train, X_test, y_train, y_test = train_test_split(X_filtered, y, test_size=0.3, stratify=y, random_state=42)
+model = GaussianNB()
+
+model.fit(X_train, y_train)
+
+y_pred = model.predict(X_test)
+
+print(classification_report(y_test, y_pred))
 
 
+
+#%% Pré-processamento | Seleção de protótipos ===========================
+
+def percentage(train, resampled):
+  excluidos = (train-resampled)
+  percentage = 100 * float(excluidos)/float(train)
+  return percentage
+
+enn = EditedNearestNeighbours()
+enn.get_params()
+
+X_train_enn, y_train_enn = enn.fit_resample(X_train, y_train)
+
+y_train_enn.value_counts()
+
+print("Porcentagem de redução: %.2f%%" % (percentage(y_train.count(), y_train_enn.count())))
+
+model = GaussianNB()
+
+model.fit(X_train_enn, y_train_enn)
+
+y_pred = model.predict(X_test)
+
+print(classification_report(y_test, y_pred))
+
+#%% Pré-processamento | Balanceamento (Under ou oversampling) ===========================
+
+# Busca o melhor método
+pipeline = Pipeline([('NB', GaussianNB())])
+
+# Random Undersampling
+rus = RandomUnderSampler(random_state=42)
+X_rus, y_rus = rus.fit_resample(X, y)
+score_rus = cross_val_score(pipeline, X_rus, y_rus, cv=5, scoring='accuracy').mean()
+
+# CNN Undersampling
+cnn = CondensedNearestNeighbour()
+X_cnn, y_cnn = cnn.fit_resample(X, y)
+score_cnn = cross_val_score(pipeline, X_cnn, y_cnn, cv=5, scoring='accuracy').mean()
+
+# SMOTE Oversampling
+smote = SMOTE(random_state=42)
+X_smote, y_smote = smote.fit_resample(X, y)
+score_smote = cross_val_score(pipeline, X_smote, y_smote, cv=5, scoring='accuracy').mean()
+
+# Exibir resultados
+print(f"Acurácia média com Random Undersampling: {score_rus:.4f}")
+print(f"Acurácia média com CNN Undersampling: {score_cnn:.4f}")
+print(f"Acurácia média com SMOTE: {score_smote:.4f}")
+
+# Aplicando o melhor método (SMOTE)
+smt = SMOTE(random_state=seed) # k_neighbors por padrão é 5
+
+#Aplicando RandomUnderSampler
+X_smt, y_smt = smt.fit_resample(X, y)
+
+# Novo dataset balanceado
+df_SMOTE = pd.DataFrame(X_smt, columns=X_train.columns)
+df_SMOTE.insert(0, 'Air_Quality', y_smt)  
+
+print(df_SMOTE.shape)
+
+sns.barplot(x="Air_Quality", y="Air_Quality",  data=df_SMOTE,  estimator=lambda x: len(x) / len(df_SMOTE) * 100)
+
+#Separando o conjunto de dados em treinamento e teste
+X_train_smt, X_test_smt, y_train_smt, y_test_smt = train_test_split(X_smt, y_smt, test_size=0.3, stratify=y_smt, random_state=seed)
+
+print("Shape de X_train:", X_train_smt.shape)
+print("Shape de X_test:", X_test_smt.shape)
+print("Shape de y_train:", y_train_smt.shape)
+print("Shape de y_test:", y_test_smt.shape)
+
+model = GaussianNB()
+
+#treinando o modelo
+model.fit(X_train_smt, y_train_smt)
+
+#predição
+y_pred_smt = model.predict(X_test_smt)
+
+#Resultados do classificador
+print(classification_report(y_test_smt, y_pred_smt))
+
+#%% Pré-processamento | Gridsearch e diminuição da dimensionalidade (PCA) ===========================
+
+scaling = StandardScaler()
+
+scaling.fit(X_train_smt)
+
+X_train_ss = scaling.transform(X_train_smt)
+X_test_ss = scaling.transform(X_test_smt)
+
+# Pipeline com scaler, PCA e NB
+pipeline = Pipeline([
+    ('scaler', StandardScaler()),
+    ('pca', PCA()),
+    ('nb', GaussianNB())
+])
+
+# Parâmetros para o GridSearch
+param_grid = {
+    'pca__n_components': [2, 5, 10, 15]
+}
+
+
+# GridSearch com validação cruzada
+grid_search = GridSearchCV(pipeline, param_grid, cv=10, scoring='accuracy')
+grid_search.fit(X_smt, y_smt)
+
+# Resultados
+print("Melhores parâmetros:", grid_search.best_params_)
+print("Melhor acurácia:", grid_search.best_score_)
+
+pca = PCA(n_components=grid_search.best_params_['pca__n_components'])
+pca.fit(X_train_smt)
+
+X_train_pca = pca.transform(X_train_smt)
+X_test_pca = pca.transform(X_test_smt)
+
+# definir um modelo
+model = GaussianNB()
+
+model.fit(X_train_pca, y_train_smt)
+
+y_pred = model.predict(X_test_pca)
+
+print(classification_report(y_test_smt, y_pred))
 #%% Avaliacao: #1 Matriz de confusao
-cm = confusion_matrix(y_test, y_pred, labels=NB_model.classes_)
+cm = confusion_matrix(y_test, y_pred, labels=model.classes_)
 print(cm)
 
-print(f"\n Labels:{NB_model.classes_} \n")
+print(f"\n Labels:{model.classes_} \n")
 
 #display_labels - define como será a ordem das classes na matriz
-disp_cm = ConfusionMatrixDisplay(confusion_matrix=cm,display_labels=NB_model.classes_)
+disp_cm = ConfusionMatrixDisplay(confusion_matrix=cm,display_labels=model.classes_)
 disp_cm.plot()
 
 #%% Avaliacao: #2 Curvas ROC
 
 # Obtem as probabilidades preditas
-y_pred_prob = NB_model.predict_proba(X_test)
+y_pred_prob = model.predict_proba(X_test)
 
 # Ordena as classes para a binarização
 classes = sorted(y.unique())
@@ -137,12 +294,11 @@ plt.yticks(fontsize=12)
 
 plt.show()
 
-
 #%% Validação: #1 Validação Cruzada - K Fold, K=10
 
 kf = KFold(n_splits=10)
 
-scores = cross_val_score(NB_model, X, y, cv=kf, scoring='accuracy')
+scores = cross_val_score(model, X, y, cv=kf, scoring='accuracy')
 
 print("Acurácias por fold:", scores)
 print("Acurácia média:", scores.mean())

@@ -2,9 +2,9 @@
 # Nome do Arquivo : KNN.py
 # Autores         : Débora Leandro de Andrade e Juan Diego de Paula Rollemberg
 # Curso           : PES - Colaborador Embraer
-# Disciplina      : Aprendizagem de máquina I
+# Disciplina      : Aprendizagem de máquina II
 # Professor       : George Darmilton
-# Data            : 03/08/2025                                                
+# Data            : 19/08/2025                                              
 # ====================================================================================================
 
 """
@@ -81,12 +81,6 @@ Hazardous - 2
 Poor - 3
 '''
 
-
-   
-#%% Treinamento Original - Aprendizagem de Máquina I ==========================================================================================
-# Todos os atributos são considerados
-# -----------------------------------------------------------
-
 # Define os atributos e a variável alvo
 target_column='Air_Quality'
 X = dataset.drop(columns=target_column)
@@ -95,23 +89,7 @@ y = dataset[target_column]
 # Define a semente
 seed=42
 
-# Divide o dataset em treino e teste
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=seed)
-
-print("Shape conjunto de treino:", X_train.shape)
-print("Shape conjunto de teste:", X_test.shape)
-
-model = KNeighborsClassifier(n_neighbors=10, metric='manhattan')
-
-model.fit(X_train, y_train)
-
-y_pred = model.predict(X_test)
-
-print(classification_report(y_test, y_pred))
-
-#%% Treinamento com pré-processamento - Aprendizagem de Máquina II ==========================================================================================
-
-#%% Seleção de atributos
+#%% Pré-processamento | Seleção de atributos ===========================
 base_estimator = SVC(kernel="linear")
 rfe = RFE(base_estimator, n_features_to_select=2, step=1)
 X_filtered = rfe.fit_transform(X, y)
@@ -142,34 +120,34 @@ y_pred = model.predict(X_test)
 
 print(classification_report(y_test, y_pred))
 
-#%% Seleção de protótipos
-#
-#def percentage(train, resampled):
-#  excluidos = (train-resampled)
-#  percentage = 100 * float(excluidos)/float(train)
-#  return percentage
-#
-#enn = EditedNearestNeighbours()
-#enn.get_params()
-#
-#X_train_enn, y_train_enn = enn.fit_resample(X_train, y_train)
-#
-#y_train_enn.value_counts()
-#
-#print("Porcentagem de redução: %.2f%%" % (percentage(y_train.count(), y_train_enn.count())))
-#
-#model = KNeighborsClassifier()
-#
-#model.fit(X_train_enn, y_train_enn)
-#
-#y_pred = model.predict(X_test)
-#
-#print(classification_report(y_test, y_pred))
-#
-##%%=================================================
+#%% Pré-processamento | Seleção de protótipos ===========================
 
-#%% Balanceamento - Undersampling vs. Oversampling
+def percentage(train, resampled):
+  excluidos = (train-resampled)
+  percentage = 100 * float(excluidos)/float(train)
+  return percentage
 
+enn = EditedNearestNeighbours()
+enn.get_params()
+
+X_train_enn, y_train_enn = enn.fit_resample(X_train, y_train)
+
+y_train_enn.value_counts()
+
+print("Porcentagem de redução: %.2f%%" % (percentage(y_train.count(), y_train_enn.count())))
+
+model = KNeighborsClassifier()
+
+model.fit(X_train_enn, y_train_enn)
+
+y_pred = model.predict(X_test)
+
+print(classification_report(y_test, y_pred))
+
+
+#%% Pré-processamento | Balanceamento (Under ou oversampling) ===========================
+
+# Busca o melhor método
 pipeline = Pipeline([('knn', KNeighborsClassifier())])
 
 # Random Undersampling
@@ -225,8 +203,8 @@ y_pred_smt = model.predict(X_test_smt)
 #Resultados do classificador
 print(classification_report(y_test_smt, y_pred_smt))
 
-#%% Utilizando pipeline, PCA e gridsearch
-# Escalonando antes de aplicar o PCA
+#%% Pré-processamento | Gridsearch e diminuição da dimensionalidade (PCA) ===========================
+
 scaling = StandardScaler()
 
 scaling.fit(X_train_smt)
@@ -248,7 +226,7 @@ param_grid = {
     'knn__weights': ['uniform', 'distance'],
     'knn__metric': ['euclidean', 'manhattan', 'chebyshev']
 }
-#%%
+
 # GridSearch com validação cruzada
 grid_search = GridSearchCV(pipeline, param_grid, cv=10, scoring='accuracy')
 grid_search.fit(X_smt, y_smt)
